@@ -36,7 +36,6 @@ from app.review_workflow import (
     stamp_reviewed_pdf,
 )
 
-
 AUTHORIZED_USERS = {
     "bbarrett@lubbockcad.org",
     "bgarnica@lubbockcad.org",
@@ -47,7 +46,6 @@ AUTHORIZED_USERS = {
 
 DEFAULT_SUPABASE_URL = "https://pzawjgckzcgnfsfuylqy.supabase.co"
 DEFAULT_SUPABASE_ANON_KEY = "sb_publishable_q6lNn59Y-kz8lG0cYfJkYw_lL7xElsA"
-
 
 st.set_page_config(
     page_title="AppraisalPilot",
@@ -62,36 +60,29 @@ st.markdown(
             background-color: #0B1F3A;
             color: #FFFFFF;
         }
-
         html, body, [class*="css"] {
             color: #E6EDF5 !important;
         }
-
         .block-container {
             padding-top: 2rem;
             padding-bottom: 2rem;
             max-width: 1500px;
         }
-
         h1, h2, h3 {
             color: #FFD700 !important;
         }
-
         label, .stSelectbox label, .stTextInput label, .stNumberInput label, .stTextArea label {
             color: #E6EDF5 !important;
             font-weight: 600;
         }
-
         input, textarea, select {
             background-color: #112B4A !important;
             color: #FFFFFF !important;
             border: 1px solid rgba(255, 215, 0, 0.25) !important;
         }
-
         ::placeholder {
             color: #AAB8CC !important;
         }
-
         .stButton > button {
             background-color: #FFD700;
             color: #0B1F3A;
@@ -100,49 +91,40 @@ st.markdown(
             border-radius: 10px;
             min-height: 44px;
         }
-
         .stButton > button:hover {
             background-color: #e6c200;
             color: #0B1F3A;
         }
-
         .stTabs [data-baseweb="tab-list"] {
             gap: 18px;
         }
-
         .stTabs [data-baseweb="tab"] {
             color: #D7DFEA !important;
             font-weight: 600;
         }
-
         .stTabs [aria-selected="true"] {
             color: #FFD700 !important;
         }
-
         div[data-testid="stFileUploader"] {
             background: #102948;
             border-radius: 14px;
             padding: 12px;
         }
-
         .stDataFrame {
             border: 1px solid rgba(255, 215, 0, 0.15);
             border-radius: 12px;
             overflow: hidden;
         }
-
         .ap-title {
             font-size: 2.2rem;
             font-weight: 800;
             color: #FFD700;
             margin-bottom: 0.25rem;
         }
-
         .ap-subtitle {
             color: #D7DFEA;
             margin-bottom: 1.25rem;
         }
-
         .ap-card {
             background: #102948;
             border: 1px solid rgba(255, 215, 0, 0.20);
@@ -150,12 +132,10 @@ st.markdown(
             padding: 18px;
             margin-bottom: 16px;
         }
-
         .ap-muted {
             color: #C7D2E3 !important;
             font-size: 0.95rem;
         }
-
         .ap-kv-row {
             display: flex;
             justify-content: space-between;
@@ -163,22 +143,18 @@ st.markdown(
             padding: 8px 0;
             border-bottom: 1px solid rgba(255,255,255,0.08);
         }
-
         .ap-kv-row:last-child {
             border-bottom: none;
         }
-
         .ap-kv-label {
             color: #C7D2E3;
             font-weight: 600;
         }
-
         .ap-kv-value {
             color: #FFFFFF;
             text-align: right;
             font-weight: 500;
         }
-
         .ap-decision-card {
             background: #102948;
             border: 2px solid rgba(255, 215, 0, 0.35);
@@ -186,14 +162,12 @@ st.markdown(
             padding: 22px;
             margin-bottom: 18px;
         }
-
         .ap-decision-label {
             color: #C7D2E3;
             font-size: 0.85rem;
             text-transform: uppercase;
             letter-spacing: 0.08em;
         }
-
         .ap-decision-value {
             color: #FFFFFF;
             font-size: 2.6rem;
@@ -201,20 +175,17 @@ st.markdown(
             margin-top: 6px;
             margin-bottom: 16px;
         }
-
         .ap-mini-card {
             background: #0f2a44;
             border-radius: 14px;
             padding: 16px;
             min-height: 108px;
         }
-
         .ap-mini-label {
             font-size: 0.9rem;
             color: #D7DFEA;
             margin-bottom: 8px;
         }
-
         .ap-mini-value {
             font-size: 1.7rem;
             font-weight: 800;
@@ -222,7 +193,6 @@ st.markdown(
             line-height: 1.2;
             word-break: break-word;
         }
-
         .ap-reason-box {
             background: #112f4e;
             border-left: 5px solid #FFD700;
@@ -238,7 +208,6 @@ st.markdown(
         div[data-testid="stMetricLabel"] div {
             color: #FFFFFF !important;
         }
-
         .streamlit-expanderHeader {
             color: #FFFFFF !important;
             font-weight: 700;
@@ -248,17 +217,14 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-
 def get_secret(name: str, default: str = "") -> str:
     value = os.getenv(name)
     if value:
         return value
-
     try:
         return str(st.secrets.get(name, default) or default)
     except Exception:
         return default
-
 
 def hydrate_analysis_env_from_secrets() -> None:
     secret_names = [
@@ -278,7 +244,6 @@ def hydrate_analysis_env_from_secrets() -> None:
         "AZURE_FORM_RECOGNIZER_ENDPOINT",
         "AZURE_FORM_RECOGNIZER_KEY",
     ]
-
     for name in secret_names:
         if os.getenv(name):
             continue
@@ -286,13 +251,11 @@ def hydrate_analysis_env_from_secrets() -> None:
         if value:
             os.environ[name] = value
 
-
 def get_supabase_config() -> tuple[str, str]:
     return (
         get_secret("SUPABASE_URL", DEFAULT_SUPABASE_URL).rstrip("/"),
         get_secret("SUPABASE_ANON_KEY", DEFAULT_SUPABASE_ANON_KEY),
     )
-
 
 def supabase_auth_request(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     supabase_url, anon_key = get_supabase_config()
@@ -309,7 +272,6 @@ def supabase_auth_request(path: str, payload: dict[str, Any]) -> dict[str, Any]:
         json=payload,
         timeout=20,
     )
-
     try:
         data = response.json()
     except ValueError:
@@ -318,16 +280,13 @@ def supabase_auth_request(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     if response.status_code >= 400:
         message = data.get("msg") or data.get("message") or data.get("error_description") or "Supabase auth request failed."
         raise RuntimeError(str(message))
-
     return data
-
 
 def sign_in_with_supabase(email: str, password: str) -> dict[str, Any]:
     return supabase_auth_request(
         "token?grant_type=password",
         {"email": email, "password": password},
     )
-
 
 def create_supabase_account(email: str, password: str) -> dict[str, Any]:
     return supabase_auth_request(
@@ -342,12 +301,10 @@ def create_supabase_account(email: str, password: str) -> dict[str, Any]:
         },
     )
 
-
 def get_supabase_user(access_token: str) -> dict[str, Any]:
     supabase_url, anon_key = get_supabase_config()
     if not anon_key:
         raise RuntimeError("SUPABASE_ANON_KEY is not configured.")
-
     response = requests.get(
         f"{supabase_url}/auth/v1/user",
         headers={
@@ -360,28 +317,22 @@ def get_supabase_user(access_token: str) -> dict[str, Any]:
         data = response.json()
     except ValueError:
         data = {"message": response.text}
-
     if response.status_code >= 400:
         message = data.get("msg") or data.get("message") or "Could not restore Supabase session."
         raise RuntimeError(str(message))
-
     return data
-
 
 def restore_login_from_query_params() -> None:
     if st.session_state.get("authenticated_user") and st.session_state.get("supabase_access_token"):
         return
-
     access_token = st.query_params.get("session_token", "")
     if not access_token:
         return
-
     try:
         user = get_supabase_user(access_token)
     except Exception:
         st.query_params.clear()
         return
-
     email = str(user.get("email", "")).lower()
     if email in AUTHORIZED_USERS:
         st.session_state["authenticated_user"] = email
@@ -389,18 +340,15 @@ def restore_login_from_query_params() -> None:
     else:
         st.query_params.clear()
 
-
 def persist_login(email: str, access_token: str) -> None:
     st.session_state["authenticated_user"] = email
     st.session_state["supabase_access_token"] = access_token
     st.query_params["session_token"] = access_token
 
-
 def clear_login() -> None:
     st.session_state.pop("authenticated_user", None)
     st.session_state.pop("supabase_access_token", None)
     st.query_params.clear()
-
 
 def require_login() -> bool:
     restore_login_from_query_params()
@@ -437,18 +385,15 @@ def require_login() -> bool:
             if email not in AUTHORIZED_USERS:
                 st.error("This email is not authorized for AppraisalPilot.")
                 return False
-
             try:
                 auth_result = sign_in_with_supabase(email, password)
             except Exception as exc:
                 st.error(f"Login failed: {exc}")
                 return False
-
             access_token = auth_result.get("access_token")
             if not access_token:
                 st.error("Login did not return a session. Confirm the account email first, then try again.")
                 return False
-
             persist_login(email, access_token)
             st.rerun()
 
@@ -469,7 +414,6 @@ def require_login() -> bool:
             if new_password != confirm_password:
                 st.error("Passwords do not match.")
                 return False
-
             try:
                 signup_result = create_supabase_account(new_email, new_password)
             except Exception as exc:
@@ -477,17 +421,12 @@ def require_login() -> bool:
                 return False
 
             if signup_result.get("session") or signup_result.get("access_token"):
-                access_token = (
-                    signup_result.get("access_token")
-                    or (signup_result.get("session") or {}).get("access_token")
-                )
+                access_token = signup_result.get("access_token") or (signup_result.get("session") or {}).get("access_token")
                 persist_login(new_email, access_token)
                 st.rerun()
             else:
                 st.success("Login created. Check your email if Supabase requires confirmation, then return to the Login tab.")
-
     return False
-
 
 def build_manual_override(
     mode: str,
@@ -499,10 +438,8 @@ def build_manual_override(
     notes: str,
 ) -> dict | None:
     notes = notes or ""
-
     if mode == "Auto / Recommended":
         return None
-
     if mode == "Force Attachment Total":
         return {
             "attachment_total": float(attachment_total) if attachment_total is not None else None,
@@ -512,7 +449,6 @@ def build_manual_override(
             "life_years": None,
             "notes": notes,
         }
-
     if mode == "Force Good Faith Value":
         return {
             "attachment_total": None,
@@ -522,7 +458,6 @@ def build_manual_override(
             "life_years": None,
             "notes": notes,
         }
-
     if mode == "Force Historical Cost Less Depreciation":
         return {
             "attachment_total": None,
@@ -532,9 +467,7 @@ def build_manual_override(
             "life_years": int(life_years) if life_years is not None else None,
             "notes": notes,
         }
-
     return None
-
 
 def format_money(value) -> str:
     if value is None or value == "":
@@ -544,7 +477,6 @@ def format_money(value) -> str:
     except (TypeError, ValueError):
         return str(value)
 
-
 def format_percent(value) -> str:
     if value is None or value == "":
         return "-"
@@ -553,14 +485,12 @@ def format_percent(value) -> str:
     except (TypeError, ValueError):
         return str(value)
 
-
 def format_text(value) -> str:
     if value is None or value == "":
         return "-"
     if isinstance(value, list):
         return " | ".join(str(v) for v in value) if value else "-"
     return str(value)
-
 
 def parse_money_input(value: Any) -> float | None:
     if value is None or value == "":
@@ -569,7 +499,6 @@ def parse_money_input(value: Any) -> float | None:
         return float(str(value).replace("$", "").replace(",", "").strip())
     except (TypeError, ValueError):
         return None
-
 
 def prettify_path(path: str | None) -> str:
     mapping = {
@@ -585,7 +514,6 @@ def prettify_path(path: str | None) -> str:
         return "-"
     return mapping.get(path, path)
 
-
 def prettify_confidence(confidence: str | None) -> str:
     mapping = {
         "high": "High",
@@ -596,7 +524,6 @@ def prettify_confidence(confidence: str | None) -> str:
         return "-"
     return mapping.get(confidence.lower(), confidence)
 
-
 def confidence_color(confidence: str | None) -> str:
     confidence = (confidence or "").lower()
     if confidence == "high":
@@ -605,13 +532,11 @@ def confidence_color(confidence: str | None) -> str:
         return "#F1C40F"
     return "#E74C3C"
 
-
 def get_status_label(result: dict) -> str:
     assessment = result.get("assessment_summary", {}) or {}
     issues = assessment.get("issues", []) or []
     agent_review = result.get("agent_review", {}) or {}
     path = assessment.get("recommended_path")
-
     if path == "manual_review":
         return "Manual Review"
     if agent_review.get("status") == "fallback":
@@ -619,7 +544,6 @@ def get_status_label(result: dict) -> str:
     if issues:
         return "Review Recommended"
     return "Ready"
-
 
 def status_badge_html(result: dict) -> str:
     status = get_status_label(result)
@@ -635,7 +559,6 @@ def status_badge_html(result: dict) -> str:
         bg = "rgba(46, 204, 113, 0.15)"
         border = "#2ECC71"
         text = "🟢 Ready"
-
     return f"""
     <div style="
         background:{bg};
@@ -650,7 +573,6 @@ def status_badge_html(result: dict) -> str:
     </div>
     """
 
-
 def render_kv_section(title: str, items: list[tuple[str, str]]) -> None:
     st.subheader(title)
     rows = []
@@ -664,7 +586,6 @@ def render_kv_section(title: str, items: list[tuple[str, str]]) -> None:
             """
         )
     st.markdown("".join(rows), unsafe_allow_html=True)
-
 
 def show_top_metrics(result: dict) -> None:
     assessment = result.get("assessment_summary", {}) or {}
@@ -691,7 +612,6 @@ def show_top_metrics(result: dict) -> None:
     )
 
     c1, c2, c3 = st.columns(3)
-
     with c1:
         st.markdown(
             f"""
@@ -702,7 +622,6 @@ def show_top_metrics(result: dict) -> None:
             """,
             unsafe_allow_html=True,
         )
-
     with c2:
         st.markdown(
             f"""
@@ -713,7 +632,6 @@ def show_top_metrics(result: dict) -> None:
             """,
             unsafe_allow_html=True,
         )
-
     with c3:
         st.markdown(
             f"""
@@ -726,7 +644,6 @@ def show_top_metrics(result: dict) -> None:
         )
 
     st.markdown(status_badge_html(result), unsafe_allow_html=True)
-
     st.markdown("### Decision Reason")
     st.markdown(
         f"""
@@ -737,7 +654,6 @@ def show_top_metrics(result: dict) -> None:
         """,
         unsafe_allow_html=True,
     )
-
 
 def show_flags_and_findings(result: dict) -> None:
     form_flags = result.get("form_flags", {}) or {}
@@ -821,12 +737,10 @@ def show_flags_and_findings(result: dict) -> None:
         )
         st.markdown("</div>", unsafe_allow_html=True)
 
-
 def normalize_candidates_for_table(candidates: list[dict] | None) -> pd.DataFrame:
     candidates = candidates or []
     if not candidates:
         return pd.DataFrame(columns=["Page", "Label", "Value", "Score", "Context"])
-
     rows = []
     for c in candidates:
         rows.append(
@@ -847,7 +761,6 @@ def normalize_candidates_for_table(candidates: list[dict] | None) -> pd.DataFram
         except Exception:
             pass
     return df
-
 
 def show_agent_review(result: dict) -> None:
     agent_review = result.get("agent_review", {}) or {}
@@ -876,7 +789,6 @@ def show_agent_review(result: dict) -> None:
             st.json(rejected)
     st.markdown("</div>", unsafe_allow_html=True)
 
-
 def show_candidate_debug(result: dict) -> None:
     candidates = result.get("value_candidates", []) or []
     selected = result.get("selected_candidate") or {}
@@ -889,13 +801,11 @@ def show_candidate_debug(result: dict) -> None:
 
     with c1:
         st.metric("Candidates Found", len(candidates))
-
     with c2:
         selected_label = selected.get("label", "-")
         selected_value = format_money(selected.get("value"))
         selected_page = selected.get("page_number", "-")
         selected_score = selected.get("score", "-")
-
         st.markdown(
             f"""
             <div class="ap-mini-card" style="border:1px solid rgba(255,215,0,0.35); min-height: auto;">
@@ -915,21 +825,78 @@ def show_candidate_debug(result: dict) -> None:
     st.dataframe(df, use_container_width=True, hide_index=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
+def normalize_pdf_orientation(file_bytes: bytes) -> tuple[bytes, list[dict[str, int]]]:
+    """
+    Rotate landscape pages into portrait before OCR/extraction.
+    The page content stays the same; only orientation is normalized.
+    """
+    src = fitz.open(stream=file_bytes, filetype="pdf")
+    out = fitz.open()
+    rotation_log: list[dict[str, int]] = []
+
+    try:
+        for page_index in range(len(src)):
+            page = src[page_index]
+            width = float(page.rect.width)
+            height = float(page.rect.height)
+            existing_rotation = int(page.rotation or 0) % 360
+
+            rotate_by = 90 if width > height else 0
+            final_rotation = (existing_rotation + rotate_by) % 360
+
+            if rotate_by in (90, 270):
+                new_width, new_height = height, width
+            else:
+                new_width, new_height = width, height
+
+            new_page = out.new_page(width=new_width, height=new_height)
+            new_page.show_pdf_page(
+                new_page.rect,
+                src,
+                page_index,
+                rotate=rotate_by,
+            )
+
+            rotation_log.append(
+                {
+                    "page": page_index + 1,
+                    "original_rotation": existing_rotation,
+                    "applied_rotation": rotate_by,
+                    "final_rotation": final_rotation,
+                }
+            )
+
+        normalized_bytes = out.tobytes(garbage=4, deflate=True)
+        return normalized_bytes, rotation_log
+    finally:
+        out.close()
+        src.close()
+
+@st.cache_data(show_spinner=False)
+def get_normalized_pdf(file_bytes: bytes) -> tuple[bytes, list[dict[str, int]]]:
+    return normalize_pdf_orientation(file_bytes)
+
+def rotation_summary_text(rotation_log: list[dict[str, int]]) -> str:
+    if not rotation_log:
+        return "No pages found."
+    changed = [r for r in rotation_log if r.get("applied_rotation", 0) != 0]
+    if not changed:
+        return "No page rotation needed."
+    return " | ".join(f"Page {r['page']}: rotated {r['applied_rotation']}°" for r in changed)
 
 @st.cache_data(show_spinner=False)
 def render_pdf_pages(file_bytes: bytes) -> list[bytes]:
     pages: list[bytes] = []
-    doc = fitz.open(stream=file_bytes, filetype="pdf")
-
+    normalized_bytes, _rotation_log = get_normalized_pdf(file_bytes)
+    doc = fitz.open(stream=normalized_bytes, filetype="pdf")
     for page in doc:
         pix = page.get_pixmap(matrix=fitz.Matrix(1.4, 1.4), alpha=False)
         pages.append(pix.tobytes("png"))
-
     doc.close()
     return pages
 
-
 def show_pdf_preview(file_bytes: bytes) -> None:
+    _normalized_bytes, rotation_log = get_normalized_pdf(file_bytes)
     page_images = render_pdf_pages(file_bytes)
 
     if not page_images:
@@ -937,6 +904,7 @@ def show_pdf_preview(file_bytes: bytes) -> None:
         return
 
     st.caption(f"{len(page_images)} page(s) rendered")
+    st.caption(rotation_summary_text(rotation_log))
 
     if len(page_images) == 1:
         st.image(page_images[0], use_container_width=True)
@@ -950,25 +918,28 @@ def show_pdf_preview(file_bytes: bytes) -> None:
     )
     st.image(page_images[int(selected_page) - 1], use_container_width=True)
 
-
 def run_pipeline_from_upload(file_name: str, file_bytes: bytes, manual_override: dict | None = None) -> dict:
     hydrate_analysis_env_from_secrets()
+    normalized_bytes, rotation_log = get_normalized_pdf(file_bytes)
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-        tmp.write(file_bytes)
+        tmp.write(normalized_bytes)
         temp_pdf_path = Path(tmp.name)
 
     try:
-        return run_rendition_pipeline(
+        result = run_rendition_pipeline(
             pdf_path=str(temp_pdf_path),
             manual_override=manual_override,
         )
+        result.setdefault("pdf_preprocessing", {})
+        result["pdf_preprocessing"]["rotation_log"] = rotation_log
+        result["pdf_preprocessing"]["rotation_summary"] = rotation_summary_text(rotation_log)
+        return result
     finally:
         try:
             temp_pdf_path.unlink(missing_ok=True)
         except Exception:
             pass
-
 
 def get_result_value(result: dict) -> Any:
     assessment = result.get("assessment_summary", {}) or {}
@@ -978,7 +949,6 @@ def get_result_value(result: dict) -> Any:
         or assessment.get("recommended_assessed_value")
         or assessment.get("extracted_value")
     )
-
 
 def needs_manual_assist(result: dict) -> bool:
     assessment = result.get("assessment_summary", {}) or {}
@@ -991,7 +961,6 @@ def needs_manual_assist(result: dict) -> bool:
         or review_flags.get("ocr_unavailable")
     )
 
-
 def extract_money_values(text: str) -> list[float]:
     values: list[float] = []
     pattern = re.compile(r"\$\s*\(?[0-9][0-9,\s]*(?:\.\d{1,2})?\)?|\b\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?\b|\b\d+\.\d{2}\b")
@@ -1000,7 +969,6 @@ def extract_money_values(text: str) -> list[float]:
         if value is not None and value > 0:
             values.append(value)
     return values
-
 
 def calculate_depreciated_value(historical_cost: float, acquisition_year: int, life_years: int) -> tuple[float | None, float | None]:
     schedule_path = PROJECT_ROOT / "Data" / "depreciation_schedule.csv"
@@ -1012,7 +980,6 @@ def calculate_depreciated_value(historical_cost: float, acquisition_year: int, l
         acquisition_year=int(acquisition_year),
         life_years=int(life_years),
     )
-
 
 def apply_manual_assist_override(file_name: str, file_bytes: bytes, manual_override: dict) -> None:
     result = run_pipeline_from_upload(
@@ -1029,9 +996,7 @@ def apply_manual_assist_override(file_name: str, file_bytes: bytes, manual_overr
     st.success("Manual value applied. Review the final value, then lock and save.")
     st.rerun()
 
-
 def render_manual_assist_panel(file_name: str, result: dict, file_bytes: bytes) -> None:
-    assessment = result.get("assessment_summary", {}) or {}
     expand_panel = needs_manual_assist(result)
 
     with st.expander("Manual Assist", expanded=expand_panel):
@@ -1180,6 +1145,7 @@ def render_manual_assist_panel(file_name: str, result: dict, file_bytes: bytes) 
                             "notes": notes or "Manual assist historical cost less depreciation.",
                         },
                     )
+
 def reset_single_review_state() -> None:
     st.session_state["single_upload_reset_counter"] = (
         int(st.session_state.get("single_upload_reset_counter", 0)) + 1
@@ -1198,7 +1164,6 @@ def reset_single_review_state() -> None:
         "single_notes",
     ]:
         st.session_state.pop(key, None)
-
 
 def finalize_review_panel(file_name: str, result: dict, file_bytes: bytes) -> None:
     recommended_value = get_recommended_value(result)
@@ -1372,7 +1337,6 @@ def finalize_review_panel(file_name: str, result: dict, file_bytes: bytes) -> No
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-
 def build_batch_row(file_name: str, result: dict) -> dict:
     assessment = result.get("assessment_summary", {}) or {}
     metadata = result.get("metadata", {}) or {}
@@ -1417,7 +1381,6 @@ def build_batch_row(file_name: str, result: dict) -> dict:
         "Issues": issues_text,
     }
 
-
 def render_single_review() -> None:
     st.markdown('<div class="ap-card">', unsafe_allow_html=True)
     st.subheader("Single Review Controls")
@@ -1432,7 +1395,6 @@ def render_single_review() -> None:
             accept_multiple_files=False,
             key=upload_key,
         )
-
     with c2:
         mode = st.selectbox(
             "Valuation Mode",
@@ -1545,7 +1507,6 @@ def render_single_review() -> None:
                 life_years=life_years,
                 notes=notes,
             )
-
             result = run_pipeline_from_upload(
                 file_name=uploaded_file.name,
                 file_bytes=file_bytes,
@@ -1554,7 +1515,6 @@ def render_single_review() -> None:
             st.session_state["single_result"] = result
             st.session_state["single_file_name"] = uploaded_file.name
             st.session_state["single_file_bytes"] = file_bytes
-
             st.success("Review completed.")
 
         result = st.session_state.get("single_result")
@@ -1563,21 +1523,23 @@ def render_single_review() -> None:
 
         if result:
             show_top_metrics(result)
+
+            preprocessing = result.get("pdf_preprocessing", {}) or {}
+            rotation_summary = preprocessing.get("rotation_summary")
+            if rotation_summary:
+                st.info(f"PDF preprocessing: {rotation_summary}")
+
             render_manual_assist_panel(result_file_name, result, result_file_bytes)
             finalize_review_panel(result_file_name, result, result_file_bytes)
 
             with st.expander("Document / Form / Schedule Details", expanded=False):
                 show_flags_and_findings(result)
-
             with st.expander("AI Review / Reasoning", expanded=False):
                 show_agent_review(result)
-
             with st.expander("Extracted Value Evidence", expanded=False):
                 show_candidate_debug(result)
-
             with st.expander("One-Page Summary", expanded=False):
                 st.code(build_cli_summary(result=result, source_path=result_file_name), language="text")
-
             with st.expander("Technical JSON", expanded=False):
                 st.json(result)
 
@@ -1592,7 +1554,6 @@ def render_single_review() -> None:
         else:
             st.info("Set inputs above, then click Run Review.")
         st.markdown("</div>", unsafe_allow_html=True)
-
 
 def render_batch_review() -> None:
     st.markdown('<div class="ap-card">', unsafe_allow_html=True)
@@ -1626,7 +1587,6 @@ def render_batch_review() -> None:
 
         progress_bar = st.progress(0)
         status_text = st.empty()
-
         total = len(uploaded_files)
 
         for idx, uploaded_file in enumerate(uploaded_files, start=1):
@@ -1676,7 +1636,6 @@ def render_batch_review() -> None:
         st.info("Click Run Batch Review to process all uploaded files.")
     st.markdown("</div>", unsafe_allow_html=True)
 
-
 def render_review_queue() -> None:
     ensure_output_dirs()
     st.markdown('<div class="ap-card">', unsafe_allow_html=True)
@@ -1699,7 +1658,6 @@ def render_review_queue() -> None:
             st.error(f"Could not read review queue: {exc}")
     else:
         st.info("No saved review queue yet. Run a single or batch review and save/lock it.")
-
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown('<div class="ap-card">', unsafe_allow_html=True)
@@ -1726,7 +1684,6 @@ def render_review_queue() -> None:
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-
 def main() -> None:
     if not require_login():
         return
@@ -1741,13 +1698,10 @@ def main() -> None:
 
     with single_tab:
         render_single_review()
-
     with batch_tab:
         render_batch_review()
-
     with queue_tab:
         render_review_queue()
-
 
 if __name__ == "__main__":
     main()
