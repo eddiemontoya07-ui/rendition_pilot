@@ -1,4 +1,4 @@
-from __future__ import annotations
+    from __future__ import annotations
 
 import json
 import os
@@ -13,6 +13,14 @@ import fitz  # PyMuPDF
 import pandas as pd
 import requests
 import streamlit as st
+
+try:
+    from PIL import Image, ImageOps, ImageFilter, ImageEnhance
+except Exception:
+    Image = None
+    ImageOps = None
+    ImageFilter = None
+    ImageEnhance = None
 
 APP_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = APP_DIR.parent
@@ -749,6 +757,7 @@ def show_flags_and_findings(result: dict) -> None:
     manual_override = result.get("manual_override", {}) or {}
     assessment = result.get("assessment_summary", {}) or {}
     depreciation = result.get("depreciated_override_result", {}) or {}
+    preprocessing = result.get("preprocessing", {}) or {}
 
     left, right = st.columns(2)
 
@@ -761,6 +770,8 @@ def show_flags_and_findings(result: dict) -> None:
                 ("Owner Name", format_text(metadata.get("owner_name"))),
                 ("Account Number", format_text(metadata.get("account_number"))),
                 ("Signed Date", format_text(metadata.get("signed_date"))),
+                ("Landscape Rotated", "Yes" if preprocessing.get("landscape_pages_rotated_to_portrait") else "No"),
+                ("Handwriting Mode", "Yes" if preprocessing.get("handwriting_mode_enabled") else "No"),
             ],
         )
         st.markdown("<br>", unsafe_allow_html=True)
@@ -916,21 +927,106 @@ def show_candidate_debug(result: dict) -> None:
     st.markdown("</div>", unsafe_allow_html=True)
 
 
+
+def rotate_landscape_pdf_to_portrait(file_bytes: bytes) -> bytes:
+    """
+    Physically rewrites landscape pages into portrait orientation.
+    This is more reliable than page rotation metadata because downstream
+    OCR / rendering pipelines may ignore metadata-only rotation.
+    """
+    src = fitz.open(stream=file_bytes, filetype="pdf")
+    needs_rotation = any(page.rect.width > page.rect.height for page in src)
+
+    if not needs_rotation:
+        src.close()
+        return file_bytes
+
+    dst = fitz.open()
+    try:
+        for page in src:
+            rect = page.rect
+            if rect.width > rect.height:
+                new_page = dst.new_page(width=rect.height, height=rect.width)
+                new_page.show_pdf_page(
+                    fitz.Rect(0, 0, rect.height, rect.width),
+                    src,
+                    page.number,
+                    rotate=90,
+                )
+            else:
+                new_page = dst.new_page(width=rect.width, height=rect.height)
+                new_page.show_pdf_page(
+                    fitz.Rect(0, 0, rect.width, rect.height),
+                    src,
+                    page.number,
+                )
+
+        rotated_bytes = dst.tobytes(garbage=3, deflate=True)
+    finally:
+        dst.close()
+        src.close()
+
+    return rotated_bytes
+
+
+def preprocess_page_for_handwriting(page: fitz.Page, zoom: float = 2.5) -> bytes:
+    """
+    Render a page to a higher-resolution image and apply light cleanup
+    to help OCR with handwriting.
+    Returns PNG bytes.
+    """
+    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
+    png_bytes = pix.tobytes("png")
+
+    if Image is None:
+        return png_bytes
+
+    try:
+        import io
+
+        img = Image.open(io.BytesIO(png_bytes)).convert("L")
+        img = ImageOps.autocontrast(img)
+
+        # Slight sharpen/contrast boost for handwritten text
+        img = ImageEnhance.Contrast(img).enhance(1.5)
+        img = img.filter(ImageFilter.SHARPEN)
+
+        # Gentle thresholding
+        img = img.point(lambda p: 255 if p > 170 else 0)
+
+        out = io.BytesIO()
+        img.save(out, format="PNG")
+        return out.getvalue()
+    except Exception:
+        return png_bytes
+
+
 @st.cache_data(show_spinner=False)
-def render_pdf_pages(file_bytes: bytes) -> list[bytes]:
+def render_pdf_pages(file_bytes: bytes, enhance_handwriting: bool = False) -> list[bytes]:
     pages: list[bytes] = []
     doc = fitz.open(stream=file_bytes, filetype="pdf")
 
     for page in doc:
-        pix = page.get_pixmap(matrix=fitz.Matrix(1.4, 1.4), alpha=False)
-        pages.append(pix.tobytes("png"))
+        if enhance_handwriting:
+            pages.append(preprocess_page_for_handwriting(page))
+        else:
+            pix = page.get_pixmap(matrix=fitz.Matrix(1.4, 1.4), alpha=False)
+            pages.append(pix.tobytes("png"))
 
     doc.close()
     return pages
 
 
 def show_pdf_preview(file_bytes: bytes) -> None:
-    page_images = render_pdf_pages(file_bytes)
+    preview_rotated = rotate_landscape_pdf_to_portrait(file_bytes)
+
+    enhance_handwriting = st.checkbox(
+        "Handwriting-enhanced preview",
+        value=True,
+        key="preview_handwriting_enhance",
+    )
+
+    page_images = render_pdf_pages(preview_rotated, enhance_handwriting=enhance_handwriting)
 
     if not page_images:
         st.warning("No PDF pages could be rendered.")
@@ -954,15 +1050,24 @@ def show_pdf_preview(file_bytes: bytes) -> None:
 def run_pipeline_from_upload(file_name: str, file_bytes: bytes, manual_override: dict | None = None) -> dict:
     hydrate_analysis_env_from_secrets()
 
+    normalized_pdf_bytes = rotate_landscape_pdf_to_portrait(file_bytes)
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-        tmp.write(file_bytes)
+        tmp.write(normalized_pdf_bytes)
         temp_pdf_path = Path(tmp.name)
 
     try:
-        return run_rendition_pipeline(
+        result = run_rendition_pipeline(
             pdf_path=str(temp_pdf_path),
             manual_override=manual_override,
         )
+
+        # Helpful metadata for debugging
+        if isinstance(result, dict):
+            result.setdefault("preprocessing", {})
+            result["preprocessing"]["landscape_pages_rotated_to_portrait"] = normalized_pdf_bytes != file_bytes
+
+        return result
     finally:
         try:
             temp_pdf_path.unlink(missing_ok=True)
@@ -1001,6 +1106,25 @@ def extract_money_values(text: str) -> list[float]:
             values.append(value)
     return values
 
+
+
+
+def extract_money_values_from_text_lines(text: str) -> list[float]:
+    """
+    More forgiving extractor for messy OCR / handwriting outputs.
+    """
+    values: list[float] = []
+    if not text:
+        return values
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for line in lines:
+        cleaned = line.replace("O", "0").replace("o", "0").replace("I", "1").replace("l", "1")
+        cleaned = re.sub(r"[^0-9,.\-$() ]", "", cleaned)
+        for value in extract_money_values(cleaned):
+            values.append(value)
+
+    return values
 
 def calculate_depreciated_value(historical_cost: float, acquisition_year: int, life_years: int) -> tuple[float | None, float | None]:
     schedule_path = PROJECT_ROOT / "Data" / "depreciation_schedule.csv"
@@ -1086,6 +1210,8 @@ def render_manual_assist_panel(file_name: str, result: dict, file_bytes: bytes) 
                 key=f"assist_good_faith_amounts_{file_name}",
             )
             values = extract_money_values(amount_text)
+            if not values:
+                values = extract_money_values_from_text_lines(amount_text)
             good_faith_total = round(sum(values), 2)
             c1, c2 = st.columns(2)
             with c1:
@@ -1502,6 +1628,12 @@ def render_single_review() -> None:
             )
 
     notes = st.text_area("Notes", value="", key="single_notes", height=90)
+    handwriting_mode = st.checkbox(
+        "Enable handwriting assist",
+        value=True,
+        key="single_handwriting_mode",
+        help="Applies page rotation and handwriting-friendly preprocessing for better OCR on handwritten forms.",
+    )
     run_review = st.button("Run Review", type="primary", use_container_width=False, key="single_run_review")
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1546,14 +1678,21 @@ def render_single_review() -> None:
                 notes=notes,
             )
 
+            input_bytes = rotate_landscape_pdf_to_portrait(file_bytes)
+
             result = run_pipeline_from_upload(
                 file_name=uploaded_file.name,
-                file_bytes=file_bytes,
+                file_bytes=input_bytes,
                 manual_override=manual_override,
             )
+
+            if isinstance(result, dict):
+                result.setdefault("preprocessing", {})
+                result["preprocessing"]["handwriting_mode_enabled"] = bool(handwriting_mode)
+
             st.session_state["single_result"] = result
             st.session_state["single_file_name"] = uploaded_file.name
-            st.session_state["single_file_bytes"] = file_bytes
+            st.session_state["single_file_bytes"] = input_bytes
 
             st.success("Review completed.")
 
