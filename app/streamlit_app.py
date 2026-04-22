@@ -14,6 +14,14 @@ import pandas as pd
 import requests
 import streamlit as st
 
+try:
+    from PIL import Image, ImageOps, ImageFilter, ImageEnhance
+except Exception:
+    Image = None
+    ImageOps = None
+    ImageFilter = None
+    ImageEnhance = None
+
 APP_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = APP_DIR.parent
 
@@ -749,6 +757,7 @@ def show_flags_and_findings(result: dict) -> None:
     manual_override = result.get("manual_override", {}) or {}
     assessment = result.get("assessment_summary", {}) or {}
     depreciation = result.get("depreciated_override_result", {}) or {}
+    preprocessing = result.get("preprocessing", {}) or {}
 
     left, right = st.columns(2)
 
@@ -761,6 +770,8 @@ def show_flags_and_findings(result: dict) -> None:
                 ("Owner Name", format_text(metadata.get("owner_name"))),
                 ("Account Number", format_text(metadata.get("account_number"))),
                 ("Signed Date", format_text(metadata.get("signed_date"))),
+                ("Landscape Rotated", "Yes" if preprocessing.get("landscape_pages_rotated_to_portrait") else "No"),
+                ("Handwriting Mode", "Yes" if preprocessing.get("handwriting_mode_enabled") else "No"),
             ],
         )
         st.markdown("<br>", unsafe_allow_html=True)
@@ -779,8 +790,12 @@ def show_flags_and_findings(result: dict) -> None:
             "Schedule / Attachments",
             [
                 ("Schedule E Present", "Yes" if schedule_e.get("schedule_e_present") else "No"),
-                ("Schedule E Total", format_money(schedule_e.get("total"))),
-                ("Schedule A GFE Total", format_money(schedule_values.get("good_faith_total"))),
+                ("Schedule A Total", format_money(schedule_values.get("schedule_a_total") or schedule_values.get("good_faith_total"))),
+                ("Schedule B Total", format_money(schedule_values.get("schedule_b_total"))),
+                ("Schedule C Total", format_money(schedule_values.get("schedule_c_total"))),
+                ("Schedule D Total", format_money(schedule_values.get("schedule_d_total"))),
+                ("Schedule E Total", format_money(schedule_e.get("total") or schedule_values.get("schedule_e_total_fallback"))),
+                ("Schedule F Total", format_money(schedule_values.get("schedule_f_total"))),
                 ("Historical Cost Total", format_money(schedule_values.get("historical_cost_total"))),
                 ("Schedule E M&E Present", "Yes" if schedule_e.get("machinery_and_equipment_present") else "No"),
                 ("Attachment Summary Present", "Yes" if attachments.get("attachment_summary_present") else "No"),
@@ -916,21 +931,106 @@ def show_candidate_debug(result: dict) -> None:
     st.markdown("</div>", unsafe_allow_html=True)
 
 
+
+def rotate_landscape_pdf_to_portrait(file_bytes: bytes) -> bytes:
+    """
+    Physically rewrites landscape pages into portrait orientation.
+    This is more reliable than page rotation metadata because downstream
+    OCR / rendering pipelines may ignore metadata-only rotation.
+    """
+    src = fitz.open(stream=file_bytes, filetype="pdf")
+    needs_rotation = any(page.rect.width > page.rect.height for page in src)
+
+    if not needs_rotation:
+        src.close()
+        return file_bytes
+
+    dst = fitz.open()
+    try:
+        for page in src:
+            rect = page.rect
+            if rect.width > rect.height:
+                new_page = dst.new_page(width=rect.height, height=rect.width)
+                new_page.show_pdf_page(
+                    fitz.Rect(0, 0, rect.height, rect.width),
+                    src,
+                    page.number,
+                    rotate=90,
+                )
+            else:
+                new_page = dst.new_page(width=rect.width, height=rect.height)
+                new_page.show_pdf_page(
+                    fitz.Rect(0, 0, rect.width, rect.height),
+                    src,
+                    page.number,
+                )
+
+        rotated_bytes = dst.tobytes(garbage=3, deflate=True)
+    finally:
+        dst.close()
+        src.close()
+
+    return rotated_bytes
+
+
+def preprocess_page_for_handwriting(page: fitz.Page, zoom: float = 2.5) -> bytes:
+    """
+    Render a page to a higher-resolution image and apply light cleanup
+    to help OCR with handwriting.
+    Returns PNG bytes.
+    """
+    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
+    png_bytes = pix.tobytes("png")
+
+    if Image is None:
+        return png_bytes
+
+    try:
+        import io
+
+        img = Image.open(io.BytesIO(png_bytes)).convert("L")
+        img = ImageOps.autocontrast(img)
+
+        # Slight sharpen/contrast boost for handwritten text
+        img = ImageEnhance.Contrast(img).enhance(1.5)
+        img = img.filter(ImageFilter.SHARPEN)
+
+        # Gentle thresholding
+        img = img.point(lambda p: 255 if p > 170 else 0)
+
+        out = io.BytesIO()
+        img.save(out, format="PNG")
+        return out.getvalue()
+    except Exception:
+        return png_bytes
+
+
 @st.cache_data(show_spinner=False)
-def render_pdf_pages(file_bytes: bytes) -> list[bytes]:
+def render_pdf_pages(file_bytes: bytes, enhance_handwriting: bool = False) -> list[bytes]:
     pages: list[bytes] = []
     doc = fitz.open(stream=file_bytes, filetype="pdf")
 
     for page in doc:
-        pix = page.get_pixmap(matrix=fitz.Matrix(1.4, 1.4), alpha=False)
-        pages.append(pix.tobytes("png"))
+        if enhance_handwriting:
+            pages.append(preprocess_page_for_handwriting(page))
+        else:
+            pix = page.get_pixmap(matrix=fitz.Matrix(1.4, 1.4), alpha=False)
+            pages.append(pix.tobytes("png"))
 
     doc.close()
     return pages
 
 
 def show_pdf_preview(file_bytes: bytes) -> None:
-    page_images = render_pdf_pages(file_bytes)
+    preview_rotated = rotate_landscape_pdf_to_portrait(file_bytes)
+
+    enhance_handwriting = st.checkbox(
+        "Handwriting-enhanced preview",
+        value=True,
+        key="preview_handwriting_enhance",
+    )
+
+    page_images = render_pdf_pages(preview_rotated, enhance_handwriting=enhance_handwriting)
 
     if not page_images:
         st.warning("No PDF pages could be rendered.")
@@ -954,15 +1054,26 @@ def show_pdf_preview(file_bytes: bytes) -> None:
 def run_pipeline_from_upload(file_name: str, file_bytes: bytes, manual_override: dict | None = None) -> dict:
     hydrate_analysis_env_from_secrets()
 
+    normalized_pdf_bytes = rotate_landscape_pdf_to_portrait(file_bytes)
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-        tmp.write(file_bytes)
+        tmp.write(normalized_pdf_bytes)
         temp_pdf_path = Path(tmp.name)
 
     try:
-        return run_rendition_pipeline(
+        result = run_rendition_pipeline(
             pdf_path=str(temp_pdf_path),
             manual_override=manual_override,
         )
+
+        fallback = extract_schedule_a_f_values(normalized_pdf_bytes)
+        if isinstance(result, dict):
+            result = merge_schedule_fallbacks_into_result(result, fallback)
+            result.setdefault("preprocessing", {})
+            result["preprocessing"]["landscape_pages_rotated_to_portrait"] = normalized_pdf_bytes != file_bytes
+            result["preprocessing"]["schedule_a_f_fallback_enabled"] = True
+
+        return result
     finally:
         try:
             temp_pdf_path.unlink(missing_ok=True)
@@ -1001,6 +1112,198 @@ def extract_money_values(text: str) -> list[float]:
             values.append(value)
     return values
 
+
+
+
+def extract_money_values_from_text_lines(text: str) -> list[float]:
+    """
+    More forgiving extractor for messy OCR / handwriting outputs.
+    """
+    values: list[float] = []
+    if not text:
+        return values
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for line in lines:
+        cleaned = line.replace("O", "0").replace("o", "0").replace("I", "1").replace("l", "1")
+        cleaned = re.sub(r"[^0-9,.\-$() ]", "", cleaned)
+        for value in extract_money_values(cleaned):
+            values.append(value)
+
+    return values
+
+
+
+def extract_pdf_text_by_page(file_bytes: bytes) -> list[dict[str, Any]]:
+    pages: list[dict[str, Any]] = []
+    try:
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+    except Exception:
+        return pages
+
+    try:
+        for page_index, page in enumerate(doc, start=1):
+            try:
+                text = page.get_text("text") or ""
+            except Exception:
+                text = ""
+            pages.append({"page_number": page_index, "text": text})
+    finally:
+        doc.close()
+    return pages
+
+
+def _find_schedule_sections(page_text: str) -> dict[str, str]:
+    labels = ["A", "B", "C", "D", "E", "F"]
+    spans: dict[str, str] = {}
+    if not page_text:
+        return spans
+
+    heading_pattern = re.compile(r"(?im)^\s*schedule\s*([A-F])\b.*$", re.MULTILINE)
+    matches = list(heading_pattern.finditer(page_text))
+    if not matches:
+        return spans
+
+    for i, match in enumerate(matches):
+        label = match.group(1).upper()
+        start = match.start()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(page_text)
+        spans[label] = page_text[start:end].strip()
+    return spans
+
+
+def _extract_schedule_candidates(section_text: str) -> dict[str, Any]:
+    lines = [line.strip() for line in (section_text or "").splitlines() if line.strip()]
+    monetary_candidates: list[dict[str, Any]] = []
+    all_values = extract_money_values(section_text)
+
+    for line in lines:
+        line_values = extract_money_values(line)
+        if not line_values:
+            line_values = extract_money_values_from_text_lines(line)
+        if not line_values:
+            continue
+        lower = line.lower()
+        weight = 0
+        if "total" in lower:
+            weight += 5
+        if "subtotal" in lower:
+            weight += 3
+        if "good faith" in lower:
+            weight += 4
+        if "historical cost" in lower:
+            weight += 4
+        if "market value" in lower:
+            weight += 4
+        if "current value" in lower or "rendered value" in lower:
+            weight += 4
+        if "original cost" in lower:
+            weight += 3
+        if "inventory" in lower or "supplies" in lower or "vehicles" in lower:
+            weight += 2
+        monetary_candidates.append(
+            {
+                "line": line,
+                "values": line_values,
+                "best_value": max(line_values) if line_values else None,
+                "weight": weight,
+            }
+        )
+
+    best_line = None
+    if monetary_candidates:
+        monetary_candidates.sort(key=lambda item: (item["weight"], item["best_value"] or 0), reverse=True)
+        best_line = monetary_candidates[0]
+
+    detected_total = None
+    detection_method = None
+    if best_line and best_line.get("best_value"):
+        detected_total = float(best_line["best_value"])
+        detection_method = "keyword_line"
+    elif all_values:
+        detected_total = float(max(all_values))
+        detection_method = "largest_value_in_section"
+
+    return {
+        "detected_total": detected_total,
+        "detection_method": detection_method,
+        "all_values": all_values,
+        "top_line": (best_line or {}).get("line"),
+        "candidate_lines": monetary_candidates[:10],
+    }
+
+
+def extract_schedule_a_f_values(file_bytes: bytes) -> dict[str, Any]:
+    page_entries = extract_pdf_text_by_page(file_bytes)
+    schedules: dict[str, Any] = {}
+
+    for page in page_entries:
+        page_number = page.get("page_number")
+        page_text = page.get("text") or ""
+        sections = _find_schedule_sections(page_text)
+        for label, section_text in sections.items():
+            parsed = _extract_schedule_candidates(section_text)
+            existing = schedules.get(label)
+            candidate_total = parsed.get("detected_total")
+            if existing is None or (
+                candidate_total is not None and (existing.get("detected_total") is None or candidate_total > existing.get("detected_total", 0))
+            ):
+                schedules[label] = {
+                    "page_number": page_number,
+                    "detected_total": candidate_total,
+                    "detection_method": parsed.get("detection_method"),
+                    "top_line": parsed.get("top_line"),
+                    "all_values": parsed.get("all_values", []),
+                    "candidate_lines": parsed.get("candidate_lines", []),
+                    "raw_text": section_text[:4000],
+                }
+
+    totals_by_schedule = {label: (info or {}).get("detected_total") for label, info in schedules.items()}
+    combined_total = round(sum(value for value in totals_by_schedule.values() if isinstance(value, (int, float))), 2)
+
+    return {
+        "schedules": schedules,
+        "totals_by_schedule": totals_by_schedule,
+        "combined_total": combined_total if totals_by_schedule else None,
+        "detected_labels": sorted(schedules.keys()),
+    }
+
+
+def merge_schedule_fallbacks_into_result(result: dict, fallback: dict[str, Any]) -> dict:
+    if not isinstance(result, dict):
+        return result
+
+    result.setdefault("schedule_fallback", fallback)
+    result.setdefault("schedule_values", {})
+    result.setdefault("review_flags", {})
+    result.setdefault("attachments", {})
+
+    totals = fallback.get("totals_by_schedule", {}) or {}
+    detected_labels = fallback.get("detected_labels", []) or []
+
+    result["schedule_values"].setdefault("schedule_a_total", totals.get("A"))
+    result["schedule_values"].setdefault("schedule_b_total", totals.get("B"))
+    result["schedule_values"].setdefault("schedule_c_total", totals.get("C"))
+    result["schedule_values"].setdefault("schedule_d_total", totals.get("D"))
+    result["schedule_values"].setdefault("schedule_e_total_fallback", totals.get("E"))
+    result["schedule_values"].setdefault("schedule_f_total", totals.get("F"))
+
+    if not result["attachments"].get("best_attachment_total") and totals.get("B") is not None:
+        result["attachments"]["best_attachment_total"] = totals.get("B")
+        result["attachments"]["attachment_summary_present"] = True
+
+    if not result["schedule_values"].get("good_faith_total") and totals.get("A") is not None:
+        result["schedule_values"]["good_faith_total"] = totals.get("A")
+
+    if not result.get("schedule_e", {}).get("total") and totals.get("E") is not None:
+        result.setdefault("schedule_e", {})
+        result["schedule_e"]["total"] = totals.get("E")
+        result["schedule_e"]["schedule_e_present"] = True
+
+    result["review_flags"]["schedule_a_f_detected"] = bool(detected_labels)
+    result["review_flags"]["schedule_a_f_labels"] = detected_labels
+    result["review_flags"]["schedule_a_f_combined_total"] = fallback.get("combined_total")
+    return result
 
 def calculate_depreciated_value(historical_cost: float, acquisition_year: int, life_years: int) -> tuple[float | None, float | None]:
     schedule_path = PROJECT_ROOT / "Data" / "depreciation_schedule.csv"
@@ -1086,6 +1389,8 @@ def render_manual_assist_panel(file_name: str, result: dict, file_bytes: bytes) 
                 key=f"assist_good_faith_amounts_{file_name}",
             )
             values = extract_money_values(amount_text)
+            if not values:
+                values = extract_money_values_from_text_lines(amount_text)
             good_faith_total = round(sum(values), 2)
             c1, c2 = st.columns(2)
             with c1:
@@ -1405,8 +1710,12 @@ def build_batch_row(file_name: str, result: dict) -> dict:
         "Value Source": assessment.get("value_source") or "-",
         "Signature Detected": bool(form_flags.get("signature_block_detected")),
         "SEE ATTACHED": bool(form_flags.get("see_attached")),
-        "Schedule E Total": format_money(schedule_e.get("total")),
-        "Schedule A GFE Total": format_money(schedule_values.get("good_faith_total")),
+        "Schedule A Total": format_money(schedule_values.get("schedule_a_total") or schedule_values.get("good_faith_total")),
+        "Schedule B Total": format_money(schedule_values.get("schedule_b_total")),
+        "Schedule C Total": format_money(schedule_values.get("schedule_c_total")),
+        "Schedule D Total": format_money(schedule_values.get("schedule_d_total")),
+        "Schedule E Total": format_money(schedule_e.get("total") or schedule_values.get("schedule_e_total_fallback")),
+        "Schedule F Total": format_money(schedule_values.get("schedule_f_total")),
         "Historical Cost Total": format_money(schedule_values.get("historical_cost_total")),
         "Attachment Total": format_money(attachments.get("best_attachment_total")),
         "Agent Status": agent_review.get("status") or "-",
@@ -1502,6 +1811,12 @@ def render_single_review() -> None:
             )
 
     notes = st.text_area("Notes", value="", key="single_notes", height=90)
+    handwriting_mode = st.checkbox(
+        "Enable handwriting assist",
+        value=True,
+        key="single_handwriting_mode",
+        help="Applies page rotation and handwriting-friendly preprocessing for better OCR on handwritten forms.",
+    )
     run_review = st.button("Run Review", type="primary", use_container_width=False, key="single_run_review")
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1546,14 +1861,21 @@ def render_single_review() -> None:
                 notes=notes,
             )
 
+            input_bytes = rotate_landscape_pdf_to_portrait(file_bytes)
+
             result = run_pipeline_from_upload(
                 file_name=uploaded_file.name,
-                file_bytes=file_bytes,
+                file_bytes=input_bytes,
                 manual_override=manual_override,
             )
+
+            if isinstance(result, dict):
+                result.setdefault("preprocessing", {})
+                result["preprocessing"]["handwriting_mode_enabled"] = bool(handwriting_mode)
+
             st.session_state["single_result"] = result
             st.session_state["single_file_name"] = uploaded_file.name
-            st.session_state["single_file_bytes"] = file_bytes
+            st.session_state["single_file_bytes"] = input_bytes
 
             st.success("Review completed.")
 
